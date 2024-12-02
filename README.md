@@ -1,5 +1,9 @@
 # 简易的Kemono(Coomer)管理/下载器 Manager/Downloader
-### 示例用法
+### 能做什么 What it can do
+- 批量添加并下载Kemono/Coomer用户附件 Batch add 和 download Kemono/Coomer user attachments
+- 高度自定义的文件链接，将所有源文件集中存储并使用硬链接实现自定义的文件管理 Highly customizable file links, centrally store all source files 和 use hard links to achieve custom file management
+### 示例用法 How to use
+这只是其中一种用法，将来还会推出WebUI和flutter-KemonoViewer
 使用[command] -h查看帮助 Use[Command] -h see help info
 ```shell
 python .\main_cli.py -h
@@ -40,6 +44,42 @@ python .\main_cli.py gen-files-multi -urls xxx
 ```shell
 python .\main_cli.py hardlink -url xxx -root path/Resource
 python .\main_cli.py hardlink-multi -urls xxx -root path/Resource
+```
+### 示例的文件结构 Example of the folder structure
+```
+KemonoManager/
+│
+├── KemonoResource/
+│   ├── 00/
+│   │   ├── 00/
+│   │   │   └── 00...
+│   │   └── ...
+│   ├── ...
+│   └── tmp/
+└── KemonoFiles
+    ├── author1/
+    │   ├── service/
+    │   │   ├── compress/
+    │   │   │   ├── content
+    │   │   ├── covers/
+    │   │   │   ├── content
+    │   │   │   └── ...
+    │   │   ├── thumnails/
+    │   │   │   ├── content
+    │   │   │   └── ...
+    │   │   ├── images/  
+    │   │   │   ├── content
+    │   │   │   └── ...
+    │   │   └── images_01/
+    │   │       └── ...
+    │   │   └── .../
+    │   │       └── ...
+    │   └── service2/  
+    │       └── ...
+    └── author2/
+        ├── service/
+        └── service2/               
+
 ```
 ### 使用代理池 Use ProxyPool
 在以下文件夹中添加示例代理池数据 Create proxy pool data file in below directory.
