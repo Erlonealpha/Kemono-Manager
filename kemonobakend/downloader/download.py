@@ -13,6 +13,7 @@ from aiohttp import (
                         # ClientConnectorSSLError,
                         # ClientConnectorCertificateError
 )
+import hashlib
 from aiofiles import open as aio_open
 from pathlib import Path
 from time import time as now_time
@@ -29,70 +30,41 @@ from .types import (
 class DownloadController:
     def __init__(self, task: 'DownloadTask'):
         self.task = task
-        self.lock = asyncio.Lock()
         self.condition = asyncio.Condition()
     
     async def cancel(self):
-        async with self.lock:
-            self.task.status.set_status(DownloadStatus.CANCELLED)
-            if self.task.status.is_paused:
-                await self.condition.notify_all()
-            raise NotImplementedError("Cancel download not implemented")  # cancel download
-    
-    async def retry(self):
-        pass
-    
+        self.task.status.set_status(DownloadStatus.CANCELLED)
+        if self.task.status.is_paused:
+            await self.condition.notify_all()
+
     async def start(self):
-        async with self.lock:
-            if self.task.status.is_downloading:
-                return
-            if self.task.status.is_cancelled:
-                return await self._handle_cancel()
-            self.task.status.set_status(DownloadStatus.DOWNLOADING)
+        if self.task.status.is_downloading:
+            return
+        self.task.status.set_status(DownloadStatus.DOWNLOADING)
     
     async def pause(self):
-        async with self.lock:
-            if self.task.status.is_paused:
-                return
-            if self.task.status.is_cancelled:
-                return await self._handle_cancel()
-            self.task.status.set_status(DownloadStatus.PAUSED)
+        if self.task.status.is_paused:
+            return
+        self.task.status.set_status(DownloadStatus.PAUSED)
     
     async def resume(self):
-        async with self.lock:
-            if not self.task.status.is_paused:
-                return
-            if self.task.status.is_cancelled:
-                return await self._handle_cancel()
-            self.task.status.set_status(DownloadStatus.RESUMED)
-            await self.condition.notify_all()
-            self.task.status.set_status(DownloadStatus.DOWNLOADING)
+        if not self.task.status.is_paused:
+            return
+        self.task.status.set_status(DownloadStatus.RESUMED)
+        await self.condition.notify_all()
+        self.task.status.set_status(DownloadStatus.DOWNLOADING)
     
     async def complete(self):
-        async with self.lock:
-            self.task.status.set_status(DownloadStatus.COMPLETED)
+        self.task.status.set_status(DownloadStatus.COMPLETED)
     
     async def handle_pause(self):
-        async with self.lock:
-            if self.task.status.is_paused:
-                await self._handle_pause()
-                return True
-    
-    async def _handle_pause(self):
-        await self.condition.wait()
-        if self.task.status.is_cancelled:
-            return await self._handle_cancel()
-        raise NotImplementedError("Handle pause not implemented")  # resume download
+        if self.task.status.is_paused:
+            await self.condition.wait()
+            return True
     
     async def handle_cancel(self):
-        async with self.lock:
-            if self.task.status.is_cancelled:
-                await self._handle_cancel()
-                return True
-    
-    async def _handle_cancel(self):
-        self.task.status.set_status(DownloadStatus.CANCELLED)
-        raise NotImplementedError("Handle cancel not implemented")  # cancel download
+        if self.task.status.is_cancelled:
+            return True
 
 class DownloadSchedulerTask:
     def __init__(self, scheduler: 'DownloadScheduler', range):
@@ -135,17 +107,19 @@ class DownloadSchedulerTask:
         return True
 
     async def download(self, retries=3):
+        self._retries = retries
         self.scheduler.running_count += 1
         try:
-            while retries > 0:
+            while self._retries > 0:
                 ret = await self._download()
                 if ret == "resume" or ret == "speed_check":
                     continue
                 elif ret == "cancel":
+                    self.download_task.result.message = "Cancelled by user"
                     return False
                 elif ret is True:
                     return True
-                retries -= 1
+                self._retries -= 1
             return False
         finally:
             self.scheduler.running_count -= 1
@@ -153,9 +127,9 @@ class DownloadSchedulerTask:
     
     async def _download(self):
         def todo(size):
-            nonlocal counter
-            counter += size
-            if counter >= self.handle_size or size < self.chunk_size:
+            nonlocal chunked_size
+            chunked_size += size
+            if chunked_size >= self.handle_size or size < self.chunk_size:
                 return True, 
             return False
         if not self.pre_start():
@@ -169,7 +143,7 @@ class DownloadSchedulerTask:
                     if response.status == 206:
                         async with aio_open(self.chunk_path, self.mode) as f:
                             await f.seek(self.now_size)
-                            counter = 0
+                            chunked_size = 0
                             async for chunk in response.content.iter_chunked(self.chunk_size):
                                 chunk_size = len(chunk)
                                 await f.write(chunk)
@@ -183,7 +157,7 @@ class DownloadSchedulerTask:
                                         return "resume"
                                     if await self.download_task.controller.handle_cancel():
                                         return "cancel"
-                                    counter = 0
+                                    chunked_size = 0
                             return True
                     elif response.status == 200:
                         logger.warning(f"Download of file: {self.download_task.info.file_name} may have no range support")
@@ -194,27 +168,35 @@ class DownloadSchedulerTask:
                     elif response.status == 429:
                         logger.warning(f"Download of file: {self.download_task.info.file_name} rate limit exceeded")
                         await asyncio.sleep(2)
+                    elif response.status == 404:
+                        logger.error(f"Download of file: {self.download_task.info.file_name} not found, url: {self.download_task.info.url}")
+                    elif response.status >= 500:
+                        logger.error(f"Download of file: {self.download_task.info.file_name} failed with Server Error [{response.status}]")
                     else:
-                        logger.error(f"Download of file: {self.download_task.info.file_name} failed with status code {response.status}")
+                        logger.error(f"Download of file: {self.download_task.info.file_name} failed with wrong status [{response.status}]")
                         return False
             except ClientProxyConnectionError as e:
-                logger.error(f"{e}")
+                logger.error(f"({self._retries}){e}")
             except ClientSSLError as e:
-                logger.error(f"{e}")
+                logger.error(f"({self._retries}){e}")
             except ClientConnectionError as e:
-                logger.error(f"{e}")
+                logger.error(f"({self._retries}){e}")
             except ClientHttpProxyError as e:
-                logger.error(f"{e}")
+                logger.error(f"({self._retries}){e}")
             except ClientPayloadError as e:
-                logger.error(f"{e}")
+                logger.error(f"({self._retries}){e}")
             except ClientResponseError as e:
-                logger.error(f"{e}")
+                logger.error(f"({self._retries}){e}")
             except KeyboardInterrupt:
                 logger.error("KeyboardInterrupt")
                 self.download_task.status.set_status(DownloadStatus.CANCELLED)
                 return "cancel"
+            except asyncio.CancelledError:
+                logger.error("CancelledError")
+                self.download_task.status.set_status(DownloadStatus.CANCELLED)
+                return "cancel"
             except Exception as e:
-                logger.error(f"{e}")
+                logger.error(f"({self._retries}){e}")
     
     def speed_check(self) -> bool:
         try:
@@ -241,52 +223,63 @@ class DownloadScheduler:
         self.semaphore = asyncio.Semaphore(self.task.prop.per_task_max_concurrent)
     
     async def merge_files(self):
-        async def merge_file(task: DownloadSchedulerTask):
+        async def merge_file(task: DownloadSchedulerTask, sha256_obj):
             async with aio_open(task.chunk_path, 'rb+') as f:
                 async with aio_open(self.task.info.save_path, 'rb+') as out_f:
                     await out_f.seek(task.start_pos)
-                    await out_f.write(await f.read())
+                    while True:
+                        chunk = await f.read(1024*1024*2)
+                        if not chunk:
+                            break
+                        sha256_obj.update(chunk)
+                        await out_f.write(chunk)
         p = Path(self.task.info.save_path)
         if not p.parent.exists():
             p.parent.mkdir(parents=True)
         async with aio_open(self.task.info.save_path, 'wb'):
             pass
-        await asyncio.gather(*[self.semaphore_limited_task(merge_file(task), asyncio.Semaphore(24)) for task in self.tasks])
+        sha256_obj = hashlib.sha256()
+        for task in self.tasks:
+            await merge_file(task, sha256_obj)
+        return sha256_obj.hexdigest()
     
     def remove_tmp_files(self):
         for task in self.tasks:
-            task.chunk_path.unlink()
+            try:
+                task.chunk_path.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to remove tmp file: {task.chunk_path}, {e}")
     
-    async def start_download(self):
-        tasks = await asyncio.gather(*[self.semaphore_limited_task(task.download(), self.semaphore) for task in self.tasks])
+    async def start_download(self, background_result: bool = False):
+        tasks = await asyncio.gather(*[self.task.semaphore_limited_task(task.download(), self.semaphore) for task in self.tasks])
         if not all(tasks):
             self.failed_tasks = [task for task, success in zip(self.tasks, tasks) if not success]
             self.task.status.set_status(DownloadStatus.FAILED)
             self.task.result.message = "有部分分片下载失败"
             return False
-        await self.merge_files()
+        elif background_result:
+            self.task.result.message = "Waiting for background completion"
+            self.task._wait_complete = True
+            return True
+        return await self.complete()
+
+    async def complete(self):
+        sha256 = await self.merge_files()
         if self.task.info.file_sha256 is not None:
-            if self.task.prop.file_strict and not await async_verify_file_sha256(self.task.info.save_path, self.task.info.file_sha256):
-                logger.error(f"File: {self.task.info.file_name} sha256 verification failed")
+            if self.task.prop.file_strict and sha256 != self.task.info.file_sha256:
+                logger.error(f"Task {self.task.task_id} {self.task.info.file_name} sha256 verification failed")
                 self.task.status.set_status(DownloadStatus.FAILED)
                 self.task.result.message = "文件校验失败"
                 os.remove(self.task.info.save_path)
                 return False
             elif self.task.prop.file_strict:
                 self.remove_tmp_files()
-                logger.info(f"File: {self.task.info.file_name} sha256 verified")
-                
-        elif self.task.prop.file_strict:
-            logger.warning(f"File: {self.task.info.file_name} sha256 verification not provided, skipping")
+                logger.info(f"Task {self.task.task_id} {self.task.info.file_name} sha256 verified")
         else:
             self.remove_tmp_files()
         
         self.task.status.set_status(DownloadStatus.COMPLETED)
         return True
-    
-    async def semaphore_limited_task(self, task: Awaitable[bool], semaphore: asyncio.Semaphore):
-        async with semaphore:
-            return await task
 
 class DownloadTask:
     def __init__(
@@ -295,6 +288,7 @@ class DownloadTask:
         prop: DownloadProperties,
         priority: int,
         start: bool = True,
+        background_result: bool = False,
         num_chunks: Optional[int] = None,
         chunk_size: Optional[int] = None,
     ):
@@ -302,21 +296,30 @@ class DownloadTask:
         self.info = info
         self.prop = prop
         self.priority = priority
-        self._start = start
+        self.__start = start
         self.num_chunks = num_chunks
         self.chunk_size = chunk_size
         self.status = DownloadStatus()
         self.controller = DownloadController(self)
         self.scheduler = None
-        self.result = DownloadResult()
-
+        self.result = DownloadResult(task_id=self.task_id)
+        self._task = None
+        self._wait_complete = False
+        self._background_result = background_result
+        
     def pre_start(self):
         self.prop.progress_tracker.add_task(self.task_id, "下载", self.info.file_name, self.info.file_size)
     
-    async def start(self):
+    def start(self, semaphore: asyncio.Semaphore = None):
+        self._task = asyncio.create_task(self.semaphore_limited_task(self._start(), semaphore))
+        return self._task
+    
+    async def _start(self):
         if await async_verify_file_sha256(self.info.save_path, self.info.file_sha256, strict=True):
-            logger.info(f"File: {self.info.file_name} already exists and sha256 verified, skipping download")
-            return True
+            logger.info(f"Task {self.task_id} {self.info.file_name} already exists and sha256 verified, skipping download")
+            self.result.message = "File already exists and sha256 verified"
+            self.result.success = True
+            return self.result
         
         if self.info.file_size is None:
             self.info.file_size = await self.info.get_file_size(session_pool=self.prop.session_pool)
@@ -326,9 +329,16 @@ class DownloadTask:
         self.scheduler = DownloadScheduler(self)
         self.pre_start()
         
-        ret = await self.scheduler.start_download()
+        ret = await self.scheduler.start_download(self._background_result)
+        self.result.success = ret
         self.prop.progress_tracker.remove_task(self.task_id)
-        return ret
+        return self.result
+    
+    async def semaphore_limited_task(self, task, semaphore: Optional[asyncio.Semaphore] = None):
+        if semaphore is None:
+            return await task
+        async with semaphore:
+            return await task
     
     def dump(self):
         '''

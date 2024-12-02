@@ -234,12 +234,13 @@ class DownloadProperties:
         self.file_strict = file_strict
 
 class DownloadResult:
-    def __init__(self, success: bool = False, message: str = "Pending", total_size = None):
+    def __init__(self, success: bool = False, message: str = "Pending", *, total_size = None, task_id: TaskId = None):
         self.success = success
         self._message = message
         self.message_history = []
         self.downloaded_size = 0
         self.total_size = total_size
+        self.task_id = task_id
     
     @property
     def message(self) -> str:
@@ -248,6 +249,12 @@ class DownloadResult:
     def message(self, value: str):
         self._message = value
         self.message_history.append(value)
+    
+    def __str__(self):
+        return f"DownloadResult(success={self.success}, message={self.message}, downloaded_size={self.downloaded_size}, total_size={self.total_size}, task_id={self.task_id})"
+    
+    def __repr__(self):
+        return self.__str__()
 
 class Status:
     PENDING = "pending"
