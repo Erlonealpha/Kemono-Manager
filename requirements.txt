@@ -1,0 +1,18 @@
+aiofiles==24.1.0
+aiohttp==3.9.5
+aiomultiprocess==0.9.1
+APScheduler==3.10.4
+asyncstdlib==3.13.0
+attr==0.3.2
+beautifulsoup4==4.12.3
+bidict==0.23.1
+# claude_api==1.0.17
+fastapi==0.115.5
+Pillow==11.0.0
+pydantic==2.10.2
+rich==13.9.4
+SQLAlchemy==2.0.35
+sqlmodel==0.0.22
+Telethon==1.37.0
+ua_generator==1.0.5
+yarl==1.9.4
