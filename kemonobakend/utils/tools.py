@@ -167,7 +167,7 @@ def to_bytes(num: Union[str, int], unit: Optional[str] = None):
         num, unit = get_num_and_unit(num)
     unit = Units.index(unit)
     return num * 1024 ** unit
-def to_unit(num: int, unit: str=None, precision: int=2, keep_length:Optional[int] = None) -> str:
+def to_unit(num: Optional[int], unit: Optional[str]=None, precision: int=2, keep_length:Optional[int] = None) -> str:
     # 根据字节数，转换为后缀
     if num is None:
         if keep_length is not None and keep_length > 3:
