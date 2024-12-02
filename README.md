@@ -43,7 +43,9 @@ python .\main_cli.py hardlink-multi -urls xxx -root path/Resource
 ```
 ### 使用代理池 Use ProxyPool
 在以下文件夹中添加示例代理池数据 Create proxy pool data file in below directory.
+
 data/proxies/
+
 示例 example_proxies.json
 ```json
 [
@@ -67,3 +69,4 @@ data/proxies/
     }
 ]
 ```
+### 更多功能介绍 More features introduction
