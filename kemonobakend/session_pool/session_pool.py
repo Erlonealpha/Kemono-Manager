@@ -23,6 +23,7 @@ from kemonobakend.accounts_pool import AccountsPool, Account
 from kemonobakend.utils import UA_RAND
 from kemonobakend.utils.helpers import get_running_loop
 from kemonobakend.config import settings
+from kemonobakend.log import logger
 
 from typing import Callable, Generator, Optional, Type, TypeVar, Union, Any, List
 
@@ -52,6 +53,8 @@ class ClientSession(_ClientSession):
     def init(self, *args, **kwargs):
         if not args: args = self._args 
         if not kwargs: kwargs = self._kwargs
+        if self.proxy.is_direct_proxy:
+            kwargs["trust_env"] = True
         super().__init__(*args, **kwargs)
         self._prepared = True
     
@@ -211,6 +214,7 @@ class PoolHandler(AbstractHandler):
     def full(self):
         # no wait
         return False
+    
     def empty(self):
         return self._get_count >= self._full_size
     
@@ -231,7 +235,7 @@ class PoolHandler(AbstractHandler):
             # 根据差值百分比和设定的阈值，判断是否需要随机选择，避免短时间内过多重复选择
             if any((first.proxy.force_priority is not None, second.proxy.force_priority is not None)) \
                 and 0.98 > elp > settings.session_pool.elp_threshold:
-                # 0.98 用于当设置了数值很大的force_priority时 
+                # 0.98 用于当设置了数值很大的force_priority时
                 index = i+1
                 break
             elif elp > settings.session_pool.elp_threshold:
@@ -498,6 +502,7 @@ class SessionPool(Proxies):
                     session.max_use = max_use
                     # reset cache and update full_size
                     self.handler.change_full_size(elapsed)
+                    logger.debug(f'SessionPool: {session.id} max_use updated to {max_use}, elapsed {elapsed}')
 
         conf = TraceConfig()
         # conf.on_request_exception.append(on_request_exception)
@@ -537,7 +542,6 @@ class SessionPool(Proxies):
                             self._loop.run_until_complete(session.close())
                     except Exception:
                         pass
-        self.save_load_manager.auto_save()
         super().__del__()
 
 
