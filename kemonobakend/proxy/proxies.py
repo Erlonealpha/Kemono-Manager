@@ -358,8 +358,10 @@ class Proxies(BaseSaveLoadModel):
                     print( f"[green]Speed: {to_unit(params.speed, keep_length=6)}/s\tPing: {conn}\tRead time: {read}\t\t{proxy.name}[/green]")
                 elif params.exception is not None:
                     print(   f"[red]Speed: {to_unit(params.speed, keep_length=6)}/s\tPing: {conn}\tRead time: {read}\t\t{proxy.name}\t\tException: {params.exception.__class__.__name__}[/red]")
-                else:
+                elif params.response is not None:
                     print(f"[yellow]Speed: {to_unit(params.speed, keep_length=6)}/s\tPing: {conn}\tRead time: {read}\t\t{proxy.name}\t\tStatus: {params.response.status}[/yellow]")
+                else:
+                    print(f"[yellow]Speed: {to_unit(params.speed, keep_length=6)}/s\tPing: {conn}\tRead time: {read}\t\t{proxy.name}[/yellow]")
             if callback_multi is not None:
                 callback_multi(proxy, params)
             if c == l:
@@ -567,10 +569,3 @@ class Proxies(BaseSaveLoadModel):
             self.auto_check_proxies_scheduler.shutdown()
         except RuntimeError:
             pass
-
-class _Futures:
-    def __init__(self, futures: list[Future]):
-        self.futures = futures
-    def join(self):
-        for future in self.futures:
-            future.result()

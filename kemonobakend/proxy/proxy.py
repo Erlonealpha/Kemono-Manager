@@ -182,11 +182,11 @@ class _Priority:
 class CheckProxyCallbackParams:
     success: bool = False
     all_time: float = None
-    connection_time: float = None
-    response_time: float = None
-    read_time: float = None
-    speed: float = None
-    response: ClientResponse = None
+    connection_time: Optional[float] = None
+    response_time: Optional[float] = None
+    read_time: Optional[float] = None
+    speed: Optional[float] = None
+    response: Optional[ClientResponse] = None
     exception: Optional[Exception] = None
 
 @attr.s(auto_attribs=True, slots=True)
@@ -346,14 +346,14 @@ class Proxy:
             "priority": self.priority,
             "manual_priority_ascending": self.manual_priority_ascending,
             "is_valid": self.is_valid,
-            "last_checked": self.last_checked.strftime("%Y-%m-%d %H:%M:%S") if self.last_checked else None,
+            "last_checked": self.last_checked.strftime("%Y-%m-%d %H:%M:%S") if self.last_checked is not None else None,
             "ping": self.ping,
             "speed": self.speed,
             "response_time": self.response_time
         }
     def dump_runtime(self):
         return {
-            "last_checked": self.last_checked.strftime("%Y-%m-%d %H:%M:%S") if self.last_checked else None,
+            "last_checked": self.last_checked.strftime("%Y-%m-%d %H:%M:%S") if self.last_checked is not None else None,
             "ping": self.ping,
             "speed": self.speed,
             "response_time": self.response_time,
@@ -388,7 +388,7 @@ class Proxy:
     async def check(
             self, 
             timeout: Optional[Union[int, ClientTimeout]] = None, 
-            target_url: str = "https://img.kemono.su/banners/patreon/5853263", output=True,
+            target_url: str = "https://img.kemono.su/banners/patreon/5853263",
             callback: Callable[['Proxy', CheckProxyCallbackParams], Any]=None, 
             no_update: bool=False,
             semaphore: Optional[Semaphore]=None
@@ -437,7 +437,6 @@ class Proxy:
                                     
                                     if callback is not None:
                                         callback_params.success = True
-                                        callback_params.all_time = current_time() - start_time_all
                                         callback_params.connection_time = connection_create_time
                                         callback_params.response_time = response_time
                                         callback_params.read_time = content_read
@@ -464,6 +463,7 @@ class Proxy:
                         callback_params.exception = last_exception
             finally:
                 if callback is not None:
+                    callback_params.all_time = current_time() - start_time_all
                     callback(self, callback_params)
                 self.is_check_running = False
                 self.using_count -= 1
@@ -515,7 +515,7 @@ class Proxy:
                 callback(self, callback_params)
     
     async def get_proxy_info(self, api_url: str = None, callback: Callable[['Proxy'], Any]=None): 
-        timeout = ClientTimeout(3, 2, 2)
+        timeout = ClientTimeout(4, 3, 3)
         async with ClientSession(headers=UA_RAND.headers.get(), timeout=timeout) as session:
             try:
                 if api_url is None:
@@ -560,5 +560,3 @@ if __name__ == "__main__":
     proxy = Proxy("http://127.0.0.1:43016", proxy_name="新加坡 V2 | 国内优化1 1倍")
     print(proxy)
     run(proxy.fresh_info())
-        
-        
