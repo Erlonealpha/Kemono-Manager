@@ -24,8 +24,8 @@ class KemonoFileHandle(BaseSessionHandle):
         statement = select(KemonoFile).where(KemonoFile.formatter_name == formatter_name)
         return (await self.session.exec(statement)).all()
     
-    async def get_files_by_user(self, user_hash_id: str):
-        statement = select(KemonoFile).where(KemonoFile.user_hash_id == user_hash_id)
+    async def get_files_by_user(self, user_hash_id: str, formatter_name):
+        statement = select(KemonoFile).where(KemonoFile.user_hash_id == user_hash_id, KemonoFile.formatter_name == formatter_name)
         return (await self.session.exec(statement)).all()
     
     async def get_files_by_post(self, post_hash_id: str):
@@ -34,6 +34,18 @@ class KemonoFileHandle(BaseSessionHandle):
     
     async def delete_files_by_formatter_name(self, formatter_name: str, commit: bool = True):
         statement = select(KemonoFile).where(KemonoFile.formatter_name == formatter_name)
+        files = (await self.session.exec(statement)).all()
+        try:
+            for file in files:
+                await self.delete(file, commit=False)
+            if commit:
+                await self.session.commit()
+        except Exception as e:
+            return False
+        return True
+
+    async def delete_files_by_user(self, user_hash_id: str, formatter_name: str, commit: bool = True):
+        statement = select(KemonoFile).where(KemonoFile.user_hash_id == user_hash_id, KemonoFile.formatter_name == formatter_name)
         files = (await self.session.exec(statement)).all()
         try:
             for file in files:

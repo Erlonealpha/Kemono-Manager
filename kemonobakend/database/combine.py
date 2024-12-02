@@ -9,7 +9,7 @@ from kemonobakend.database.session_handle import (
     
     KemonoCreatorHandle, KemonoUserHandle, KemonoPostHandle,
     KemonoPostsInfoHandle, KemonoAttachmentHandle, KemonoFileHandle,
-    FormatterParamHandle
+    FormatterParamsHandle
 )
 from .engine import engine as e
 
@@ -17,7 +17,7 @@ class AbsHandler:
     __builtin_handlers__ = (
         KemonoCreatorHandle, KemonoUserHandle, KemonoPostHandle, 
         KemonoPostsInfoHandle, KemonoAttachmentHandle, KemonoFileHandle,
-        FormatterParamHandle
+        FormatterParamsHandle
     )
     __builtin_handlers_map__ = {
         "KemonoCreatorHandle": "kemono_creator",
@@ -26,7 +26,7 @@ class AbsHandler:
         "KemonoPostsInfoHandle": "kemono_posts_info",
         "KemonoAttachmentHandle": "kemono_attachment",
         "KemonoFileHandle": "kemono_file",
-        "FormatterParamHandle": "formatter_param"
+        "FormatterParamsHandle": "formatter_params"
     }
     kemono_creator: KemonoCreatorHandle
     kemono_user: KemonoUserHandle
@@ -34,7 +34,7 @@ class AbsHandler:
     kemono_posts_info: KemonoPostsInfoHandle
     kemono_attachment: KemonoAttachmentHandle
     kemono_file: KemonoFileHandle
-    formatter_param: FormatterParamHandle
+    formatter_params: FormatterParamsHandle
 
 async def create_all(engine: AsyncEngine):
     async with engine.begin() as conn:

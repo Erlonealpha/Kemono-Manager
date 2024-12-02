@@ -1,15 +1,15 @@
 from kemonobakend.database.models import KemonoAttachmentCreate
-from kemonobakend.kemono.builtins import attachment_hash_id_func, get_sha256_from_path, DATA_URL
+from kemonobakend.kemono.builtins import attachment_hash_id_func, get_sha256_from_path, KEMONO_DATA_URL
 
 
 def get_attachments_kwds_by_post(post) -> list[dict]:
     def path(p, i=None):
         if isinstance(p, str):
-            return DATA_URL + p
+            return KEMONO_DATA_URL + p
         else:
             if path := p.get("path"):
                 if not path.startswith("http"):
-                    p["path"] = DATA_URL + path
+                    p["path"] = KEMONO_DATA_URL + path
                 if i is not None:
                     p["idx"] = i
                 return p

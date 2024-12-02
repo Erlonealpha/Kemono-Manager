@@ -4,4 +4,4 @@ from .kemono_post import build_kemono_post
 from .kemono_posts_info import build_kemono_posts_info
 from .kemono_attachment import build_kemono_attachments, get_attachments_kwds_by_post
 from .kemono_file import build_kemono_file_by_kwd, build_kemono_file_by_attachment
-from .formatter_param import build_formatter_param
+from .formatter_params import build_formatter_param

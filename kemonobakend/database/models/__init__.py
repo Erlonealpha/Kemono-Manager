@@ -5,4 +5,5 @@ from .kemono_post import KemonoPost, KemonoPostCreate
 from .kemono_posts_info import KemonoPostsInfo, KemonoPostsInfoCreate
 from .kemono_attachment import KemonoAttachment, KemonoAttachmentCreate
 from .kemono_file import KemonoFile, KemonoFileCreate
-from .formatter_param import FormatterParam, FormatterParamCreate
+from .formatter_params import FormatterParams, FormatterParamsCreate
+from .compress import Compress, CompressCreate, CompressPath, CompressPathCreate
