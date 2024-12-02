@@ -3,8 +3,29 @@ from yarl import URL
 from typing import Optional, Union
 from kemonobakend.utils import calc_str_sha256, calc_str_md5, json_dumps
 
+SITES = (
+    "kemono",
+    "coomer"
+)
 
-SERVICES = (
+SERVICES_SITE_MAP = {
+    "patreon":       "kemono",
+    "fanbox":        "kemono",
+    "gumroad":       "kemono",
+    "discord":       "kemono",
+    "fantia":        "kemono",
+    "dlsite":        "kemono",
+    "afdian":        "kemono",
+    "boosty":        "kemono",
+    "subscribestar": "kemono",
+    "onlyfans":      "coomer",
+    "fansly":        "coomer",
+    "candfans":      "coomer",
+}
+
+ALL_SERVICES = tuple(SERVICES_SITE_MAP.keys())
+
+KEMONO_SERVICES = (
     "patreon",
     "fanbox",
     "gumroad",
@@ -16,10 +37,19 @@ SERVICES = (
     "subscribestar"
 )
 
-API_URL = "https://kemono.su/api/v1"
-DATA_URL = "https://kemono.su/data"
+COOMER_SERVICES = (
+    "onlyfans",
+    "fansly",
+    "candfans"
+)
 
-PUBLIC_NAME_SERVICES_WITH_PRIORITY = (
+KEMONO_API_URL = "https://kemono.su/api/v1"
+KEMONO_DATA_URL = "https://kemono.su/data"
+
+COOMER_API_URL = "https://coomer.su/api/v1"
+COOMER_DATA_URL = "https://coomer.su/data"
+
+KEMONO_PUBLIC_NAME_SERVICES_WITH_PRIORITY = (
     "fanbox",
     "patreon",
     "gumroad",
@@ -30,13 +60,36 @@ PUBLIC_NAME_SERVICES_WITH_PRIORITY = (
     "afdian",
     "boosty",
 )
+
+COOMER_PUBLIC_NAME_SERVICES_WITH_PRIORITY = (
+    "onlyfans",
+    "fansly",
+    "candfans"
+)
+
+def get_service_site(service: str) -> str:
+    if  service in SITES:
+        return service
+    if service not in ALL_SERVICES:
+        raise ValueError(f"Invalid service {service}")
+    site = SERVICES_SITE_MAP.get(service)
+    if site is None:
+        raise ValueError(f"Invalid service {service}")
+    return site
 
 def select_public_user(all_users: list[dict]):
     '''select the public user from all_users list'''
+    assert all_users, "all_users is empty"
     index_l = None
     for user in all_users:
         service = user.get("service")
-        index = PUBLIC_NAME_SERVICES_WITH_PRIORITY.index(service)
+        site = SERVICES_SITE_MAP.get(service)
+        if site == "kemono":
+            index = KEMONO_PUBLIC_NAME_SERVICES_WITH_PRIORITY.index(service)
+        elif site == "coomer":
+            index = COOMER_PUBLIC_NAME_SERVICES_WITH_PRIORITY.index(service)
+        else:
+            raise ValueError(f"Invalid service {service}")
         if index == 0:
             return user
         if index_l is None or index < index_l[0]:
@@ -52,7 +105,7 @@ def get_user_id_service_by_url(url: Union[str, URL]) -> tuple:
     for path in paths:
         if path == "user":
             user_id = paths[paths.index(path)+1]
-        elif path in SERVICES:
+        elif path in ALL_SERVICES:
             service = path
         elif path == "discord":
             # https://kemono.su/discord/server/814339508694155294#815230464306446346
@@ -65,9 +118,9 @@ def get_user_id_service_by_url(url: Union[str, URL]) -> tuple:
     return user_id, service
 
 def base_hash_id_func(id, service):
-    if service not in SERVICES:
-        raise ValueError("Invalid service")
-    index = hex(SERVICES.index(service))
+    if service not in ALL_SERVICES:
+        raise ValueError(f"Invalid service {service}")
+    index = hex(ALL_SERVICES.index(service))
     return f"{index}_{id}"
 
 def creator_hash_id_func(id: str, public_name: str):
@@ -121,7 +174,7 @@ def strip_name(name: str):
     pattern = r'|'.join(map(re.escape, strip_lst))
     name_p = re.sub(pattern, '', name)
     return name_p
-def format_name(name: str, max_num:int=64):
+def format_name(name: str, max_num: int = 64):
     name_p = strip_name(name)
     if len(name_p) > max_num:
         sp = name_p.split()
@@ -137,17 +190,37 @@ def format_name(name: str, max_num:int=64):
         return name_p[:max_num]
     return name_p
 
+def get_service_from_user_hash_id(user_hash_id: str) -> str:
+    index = int(user_hash_id.split("_")[0].replace("0x", ""), len(ALL_SERVICES))
+    if index == len(ALL_SERVICES):
+        raise ValueError(f"Invalid user_hash_id {user_hash_id}")
+    return ALL_SERVICES[index]
+
+def get_user_id_service_by_hash_id(user_hash_id: str) -> tuple[str, str]:
+    '''Return (user_id, service)'''
+    index = int(user_hash_id.split("_")[0].replace("0x", ""), len(ALL_SERVICES))
+    if index == len(ALL_SERVICES):
+        raise ValueError(f"Invalid user_hash_id {user_hash_id}")
+    return user_hash_id.split("_")[1], ALL_SERVICES[index]
+
 def parse_user_id(user_id=None, service=None, server_id=None, url=None):
+    '''
+    - Input:
+        1. user_id, service
+        2. server_id
+        3. url
+        4. user_id (hash_id)
+    '''
     if user_id and service:
         user_hash_id = user_hash_id_func(user_id, service)
     elif server_id:
         user_id = server_id
         service = 'discord'
-        user_hash_id = user_hash_id_func(server_id, 'discord')
+        user_hash_id = user_hash_id_func(server_id, service)
     elif url:
         user_id, service = get_user_id_service_by_url(url)
         user_hash_id = user_hash_id_func(user_id, service)
     elif user_id and "_" in user_id:
         user_hash_id = user_id
-        user_id = user_id.split("_")[-1]
+        user_id, service = get_user_id_service_by_hash_id(user_hash_id)
     return user_id, user_hash_id, service

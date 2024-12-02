@@ -10,15 +10,58 @@ from kemonobakend.database.model_builder import build_kemono_posts_info
 from kemonobakend.database.models import KemonoUser, KemonoUserCreate, KemonoFile, KemonoAttachment, KemonoPostsInfo
 from kemonobakend.session_pool import SessionPool
 from kemonobakend.downloader import Downloader, DownloadProperties
-from kemonobakend.api import KemonoAPI
+from kemonobakend.api import KemonoAPI, PartySuAPIError
 from kemonobakend.database.engine import engine as e
 from kemonobakend.utils import path_exists, MKLink
+from kemonobakend.utils.run_code import RunCoder
 from kemonobakend.utils.progress import NormalProgress, DownloadProgress
 from kemonobakend.log import logger
 
 from .builtins import parse_user_id
 from .files import KemonoFilesFormatter
 from .resource_handler import ResourceHandler
+
+class ProgramTools:
+    @staticmethod
+    async def async_with_progress(func, iterable, desc, remove_after=True, progress: Optional[DownloadProgress] = None):
+        async def async_wrap(item):
+            try:
+                return await func(item)
+            finally:
+                task.advance()
+        
+        if progress is None:
+            progress_ = NormalProgress().__enter__()
+        else:
+            progress_ = progress
+        task = progress_.add_task(desc, "Awaiting", total=len(iterable))
+        try:
+            return await alist(amap(async_wrap, iterable))
+        finally:
+            if remove_after:
+                task.remove()
+            if progress is None:
+                progress_.__exit__(None, None, None)
+    
+    def with_progress(func, iterable, desc, remove_after=True, progress: Optional[DownloadProgress] = None):
+        def wrap(item):
+            try:
+                return func(item)
+            finally:
+                task.advance()
+                
+        if progress is None:
+            progress_ = NormalProgress().__enter__()
+        else:
+            progress_ = progress
+        task = progress_.add_task(desc, "Awaiting", total=len(iterable))
+        try:
+            return list(map(wrap, iterable))
+        finally:
+            if remove_after:
+                task.remove()
+            if progress is None:
+                progress_.__exit__(None, None, None)
 
 class KemonoProgram:
     def __init__(self, session_pool=None, database_engine=e):
@@ -41,6 +84,13 @@ class KemonoProgram:
         user_id, user_hash_id, service = parse_user_id(user_id, service, server_id, url)
         async with self.session_context() as session:
             return await session.kemono_user.get_user(user_hash_id, all_users=all_users)
+    
+    async def get_formatter(self, formatter_name: str):
+        async with self.session_context() as session:
+            params = await session.formatter_params.get_param(formatter_name)
+            if params is None:
+                return None
+            return KemonoFilesFormatter.from_formatter_params(formatter_name, params)
 
     async def get_all_users(self) -> list[KemonoUser]:
         async with self.session_context() as session:
@@ -67,10 +117,13 @@ class KemonoProgram:
 
         creator_now = await self.kemono_api.kemono_creators.create_creator(user_hash_id)
         if creator_now is None:
+            # creator is already exist or user not found or uncertain error
             creator_now = await self.kemono_api.kemono_creators.get_creator(user_hash_id)
+            if creator_now is None:
+                raise PartySuAPIError(f"Uncertain Error: kemono user {user_id} not found")
         kemono_user_now = get_current_user(creator_now.kemono_users)
         if kemono_user_now is None:
-            raise Exception("Uncertain Error: Kemono user not found in creator")
+            raise PartySuAPIError(f"Uncertain Error: Kemono user {user_id} not found in creator")
         
         async with self.session_context() as session:
             kemono_user_exist: KemonoUser = await session.kemono_user.get_user(user_hash_id, all_users=True)
@@ -144,7 +197,6 @@ class KemonoProgram:
                 except Exception as e:
                     await session.rollback()
                     logger.error(f"Error adding kemono user: {e}")
-                    return None
         return kemono_user
     
     async def update_kemono_user(self, user_id=None, service=None, server_id=None, url=None):
@@ -164,9 +216,9 @@ class KemonoProgram:
                 logger.warning(f"No posts found for user {kemono_user.user_id}")
                 return
             files_exist = await session.kemono_file.get_files_by_formatter_name(formatter.formatter_name)
-            formatter_params = await session.formatter_param.get_param(formatter.formatter_name)
+            formatter_params = await session.formatter_params.get_param(formatter.formatter_name)
         need_delete = False
-        # We not use db data in session, may ROLLBACK in case of relation loaded
+        # We not use db data in session, may ROLLBACK in case of relation loaded.
         if files_exist:
             if not update:
                 logger.warning(f"Kemono files already exist for user {kemono_user.user_id} with formatter {formatter.formatter_name}")
@@ -176,10 +228,10 @@ class KemonoProgram:
         
         async with self.session_context() as session:
             if formatter_params is None:
-                await session.formatter_param.add_param_by_kwd(formatter.formatter_name, commit=False, **formatter.get_params())
+                await session.formatter_params.add_param_by_kwd(formatter.formatter_name, commit=False, **formatter.get_params())
             else:
                 formatter_params.sqlmodel_update(formatter.get_params())
-                await session.formatter_param.update(formatter_params, commit=False)
+                await session.formatter_params.update(formatter_params, commit=False)
             if need_delete:
                 await session.kemono_file.delete_files_by_formatter_name(formatter.formatter_name, commit=False)
             await session.kemono_file.add_files(files, commit=False)
@@ -244,7 +296,13 @@ class KemonoProgram:
                 else:
                     logger.info(f"File {sha256} -> {actual_sha256}")
     
-    async def download_files_by_users(self, users: list[KemonoUser], resource_handler: ResourceHandler, downloader: Downloader = None, filter = None):
+    async def download_files_by_users(
+        self, 
+        users: list[KemonoUser], 
+        resource_handler: ResourceHandler, 
+        downloader: Optional[Downloader] = None, 
+        filter_expr: Optional[Union[str, RunCoder]] = None
+    ):
         def remove_duplicates(files: list[KemonoAttachment]):
             seen = set()
             return [file for file in files if file.sha256 is None or (file.sha256 not in seen and not seen.add(file.sha256))]
@@ -254,15 +312,20 @@ class KemonoProgram:
             posts = await session.kemono_post.get_posts_by_user(user.hash_id)
             attachments = []
             for post in posts:
-                attachments.extend(post.attachments)
+                if filter_expr is not None:
+                    _attachments = filter(lambda att: filter_expr.run(user = user, post = post, attachment = att))
+                else:
+                    _attachments = post.attachments
+                attachments.extend(_attachments)
             attachments = remove_duplicates(attachments)
             attachments = remove_existed(attachments)
-            if filter is not None:
-                # TODO: filter attachments
-                ...
+            
             all_attachments.extend(attachments)
             logger.info(f"User {user.name} has {len(attachments)} attachments")
-            
+        
+        if filter_expr is not None and isinstance(filter_expr, str):
+            filter_expr = RunCoder(filter_expr)
+        
         if downloader is None:
             prop = DownloadProperties(
                 self.session_pool,
@@ -270,9 +333,9 @@ class KemonoProgram:
                 per_task_max_concurrent = 12,
             )
             downloader = Downloader(prop)
-        
         if not downloader.is_running:
             downloader.start()
+        downloader.set_signal_cancel()
         
         async with self.session_context() as session:
             all_attachments: list[KemonoAttachment] = []
@@ -280,49 +343,17 @@ class KemonoProgram:
         downloader.prop.progress_tracker.add_main_task(f"Downloading {len(all_attachments)} files", len(all_attachments))
         for attachment in all_attachments:
             save_path = resource_handler.get_path(attachment.sha256, attachment.hash_id)
-            await downloader.create_task(attachment.path, save_path, attachment.sha256, attachment.size, attachment.sha256)
+            downloader.create_task(attachment.path, save_path, attachment.sha256, attachment.size, attachment.sha256)
     
-        # await downloader.wait_any_tasks_done(len(all_attachments))
-        await downloader.wait_forever()
+        await downloader.wait_any_tasks_done(len(all_attachments))
+        await downloader.stop()
 
-class ProgramTools:
-    @staticmethod
-    async def async_with_progress(func, iterable, desc, remove_after=True, progress: Optional[DownloadProgress] = None):
-        async def async_wrap(item):
-            try:
-                return await func(item)
-            finally:
-                task.advance()
-        
-        if progress is None:
-            progress_ = NormalProgress().__enter__()
-        else:
-            progress_ = progress
-        task = progress_.add_task(desc, "Awaiting", total=len(iterable))
-        try:
-            return await alist(amap(async_wrap, iterable))
-        finally:
-            if remove_after:
-                task.remove()
-            if progress is None:
-                progress_.__exit__(None, None, None)
+
+class CompressHandler:
+    def __init__(self, program: KemonoProgram):
+        self.program = program
     
-    def with_progress(func, iterable, desc, remove_after=True, progress: Optional[DownloadProgress] = None):
-        def wrap(item):
-            try:
-                return func(item)
-            finally:
-                task.advance()
-                
-        if progress is None:
-            progress_ = NormalProgress().__enter__()
-        else:
-            progress_ = progress
-        task = progress_.add_task(desc, "Awaiting", total=len(iterable))
-        try:
-            return list(map(wrap, iterable))
-        finally:
-            if remove_after:
-                task.remove()
-            if progress is None:
-                progress_.__exit__(None, None, None)
+    async def add():
+        pass
+
+
