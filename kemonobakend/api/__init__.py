@@ -1,2 +1,2 @@
-from .kemono import KemonoAPI
+from .kemono import KemonoAPI, PartySuAPIError
 from .patreon import PatreonAPI

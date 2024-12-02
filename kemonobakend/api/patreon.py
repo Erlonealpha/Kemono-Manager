@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from rich import print
 from typing import Optional, Awaitable, Callable, TypeVar, Union, Any
 
-from kemonobakend.kemono.builtins import SERVICES, API_URL
+from kemonobakend.kemono.builtins import KEMONO_SERVICES, KEMONO_API_URL
 from kemonobakend.session_pool import SessionPool
 from kemonobakend.event_loop import EventLoop, get_event_loop
 from kemonobakend.utils.aiotools import pre_gather_tasks, pre_task
