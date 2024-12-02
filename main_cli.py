@@ -157,7 +157,9 @@ async def add_users(urls: list[str], program: KemonoProgram):
 
 def try_load_file(path_like: str):
     try:
-        return json_load(path_like)
+        if os.path.exists(path_like):
+            with open(path_like, "r") as f:
+                return f.read()
     except:
         return None
 
@@ -283,7 +285,9 @@ async def download_users_attachments(users: list[KemonoUser], program: KemonoPro
         file_strict=not namespace.disable_strict,
     )
     downloader = Downloader(prop)
-    await program.download_files_by_users(users, resource_handler, downloader, filter_expr=namespace.filter)
+    f = try_load_file(namespace.filter)
+    filter_expr = f if f is not None else namespace.filter
+    await program.download_files_by_users(users, resource_handler, downloader, filter_expr=filter_expr)
 
 async def hardlink_files(res_root: str, program: KemonoProgram, users = None, formatter_name = None):
     async def hard_link_file(t: tuple[KemonoUser, str]):

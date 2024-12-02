@@ -41,4 +41,29 @@ python .\main_cli.py gen-files-multi -urls xxx
 python .\main_cli.py hardlink -url xxx -root path/Resource
 python .\main_cli.py hardlink-multi -urls xxx -root path/Resource
 ```
-###
+### 使用代理池 Use ProxyPool
+在以下文件夹中添加示例代理池数据 Create proxy pool data file in below directory.
+data/proxies/
+示例 example_proxies.json
+```json
+[
+    {
+        "http": "http://127.0.0.1:42000",
+        "https": "https://127.0.0.1:42000",
+        "name": "🇷🇺 俄罗斯01-IEPL专线",
+        "area": "欧洲",
+        "country": "俄罗斯",
+        "host": "127.0.0.1",
+        "port": 42000
+    },
+    {
+        "http": "http://127.0.0.1:42001",
+        "https": "https://127.0.0.1:42001",
+        "name": "🇨🇦 加拿大01-IEPL专线",
+        "area": "北美洲",
+        "country": "加拿大",
+        "host": "127.0.0.1",
+        "port": 42001
+    }
+]
+```
