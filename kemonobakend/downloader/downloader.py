@@ -40,6 +40,7 @@ class Downloader:
         self._put_waiters: list[DownloadWaiter] = []
         self._done_waiters_map: dict[TaskId, asyncio.Future] = {}
         self._put_waiters_map: dict[TaskId, asyncio.Future] = {}
+        self.__priority_increment = 1
         # self._lock = asyncio.Lock()
         self._is_set_signal = False
     
@@ -118,7 +119,7 @@ class Downloader:
         file_sha256: Optional[str] = None,
         background_result: bool = True,
         start: bool = True,
-        priority: int = 0,
+        priority: int = None,
         json: Optional[Union[dict, list]] = None,
         headers: Optional[dict] = None,
         cookies: Optional[Union[dict, str]] = None,
@@ -138,6 +139,9 @@ class Downloader:
             headers=headers,
             cookies=cookies,
         )
+        if priority is None:
+            priority = self.__priority_increment
+            self.__priority_increment += 1
         task = DownloadTask(info, self.prop, start=start, priority=priority, background_result=background_result)
         self._put_download_task(task)
         return task.task_id
