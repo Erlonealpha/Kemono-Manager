@@ -100,9 +100,9 @@ class KemonoProgram:
         async with self.session_context() as session:
             return await session.kemono_posts_info.get_all()
     
-    async def get_files_by_formatter_name(self, formatter_name: str):
+    async def get_files(self, user_hash_id, formatter_name: str):
         async with self.session_context() as session:
-            return await session.kemono_file.get_files_by_formatter_name(formatter_name)
+            return await session.kemono_file.get_files_by_user(user_hash_id, formatter_name)
     
     async def add_kemono_user(self, user_id=None, service=None, server_id=None, url=None):
         def get_current_user(users: list[Union[KemonoUser, KemonoUserCreate]], is_index: bool = False) -> Optional[Union[KemonoUser, KemonoUserCreate, int]]:
@@ -215,7 +215,7 @@ class KemonoProgram:
             if not posts:
                 logger.warning(f"No posts found for user {kemono_user.user_id}")
                 return
-            files_exist = await session.kemono_file.get_files_by_formatter_name(formatter.formatter_name)
+            files_exist = await self.get_files(kemono_user.hash_id, formatter.formatter_name)
             formatter_params = await session.formatter_params.get_param(formatter.formatter_name)
         need_delete = False
         # We not use db data in session, may ROLLBACK in case of relation loaded.
@@ -311,17 +311,24 @@ class KemonoProgram:
         async def get_all_attachments(user: KemonoUser):
             posts = await session.kemono_post.get_posts_by_user(user.hash_id)
             attachments = []
+            raw_attachments_count = 0
             for post in posts:
+                raw_attachments_count += len(post.attachments)
                 if filter_expr is not None:
-                    _attachments = filter(lambda att: filter_expr.run(user = user, post = post, attachment = att))
+                    _attachments = filter(lambda att: filter_expr.run(user = user, post = post, attachment = att), post.attachments)
                 else:
                     _attachments = post.attachments
                 attachments.extend(_attachments)
+            filtered_count = len(attachments)
+            filter_count = raw_attachments_count - filtered_count
             attachments = remove_duplicates(attachments)
+            removed_duplicates_count = len(attachments)
+            remove_duplicates_count = filtered_count - removed_duplicates_count
             attachments = remove_existed(attachments)
+            remove_existed_count = removed_duplicates_count - len(attachments)
             
             all_attachments.extend(attachments)
-            logger.info(f"User {user.name} has {len(attachments)} attachments")
+            logger.info(f"User {user.name} has {len(attachments)} attachments. All({raw_attachments_count}) Filtered({filter_count}) RemovedDuplicates({remove_duplicates_count}) RemovedExisted({remove_existed_count})")
         
         if filter_expr is not None and isinstance(filter_expr, str):
             filter_expr = RunCoder(filter_expr)

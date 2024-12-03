@@ -296,7 +296,7 @@ async def hardlink_files(res_root: str, program: KemonoProgram, users = None, fo
             if formatter_name is None:
                 # default formatter name
                 formatter_name = f"{user.public_name}_{user.hash_id}"
-            files = await program.get_files_by_formatter_name(formatter_name)
+            files = await program.get_files(user.hash_id, formatter_name)
             if not files:
                 raise Exception(f"No files found for {formatter_name}")
             if user is None:
@@ -318,17 +318,9 @@ async def hardlink_files(res_root: str, program: KemonoProgram, users = None, fo
 
 
 async def main():
-    # args = ('gen-files-multi', '-urls', 'https://kemono.su/fanbox/user/2886368,https://kemono.su/fanbox/user/22220502')
     args = ()
     namespace = get_args(*args)
     main_action = namespace.command
-    
-    # Test
-    # logger.info(namespace)
-    # from sqlalchemy.ext.asyncio import create_async_engine
-    # from kemonobakend.database.combine import create_all
-    # engine = create_async_engine("sqlite+aiosqlite:///test/test_user.db")
-    # await create_all(engine)
     
     program = KemonoProgram()
     await program.init()
